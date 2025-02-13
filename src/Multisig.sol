@@ -81,7 +81,7 @@ contract Multisig is IMultisig {
     /* -------------------- */
     /* 8. MODIFIERS         */
     /* -------------------- */
-    
+
     /// @notice Restricts function to calls through executeTransaction
     /// @dev Used for admin functions that require multisig approval
     modifier onlyMultisig() {
