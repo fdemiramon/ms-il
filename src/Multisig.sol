@@ -5,8 +5,8 @@ import "./structs/Transaction.sol";
 import "./interfaces/IMultisig.sol";
 
 /// @title MS-IL
-/// @author John Doe
-/// @notice The Multisig contract.
+/// @notice A simple multisig wallet implementation
+/// @dev This implementation is not secure and should not be used in production
 contract Multisig is IMultisig {
     /* -------------------- */
     /* 1. CONSTANTS         */
@@ -32,44 +32,58 @@ contract Multisig is IMultisig {
     /* 5. STORAGE           */
     /* -------------------- */
 
-    /// @notice Lorem ipsum
-    /// @dev Lorem ipsum
+    /// @notice List of addresses that can vote on transactions
+    /// @dev Cannot contain duplicates or zero address
     address[] public owners;
 
-    /// @notice Lorem ipsum
-    /// @dev Lorem ipsum
+    /// @notice Number of votes required to execute a transaction
+    /// @dev Must be > 0 and <= number of owners
     uint8 public threshold;
 
-    /// @notice Lorem ipsum
-    /// @dev Lorem ipsum
+    /// @notice Array of all proposed transactions
+    /// @dev Transactions are stored sequentially and referenced by index
     Transaction[] public transactions;
 
     /* -------------------- */
     /* 6. EVENTS            */
     /* -------------------- */
-    // none
+    // Events defined in IMultisig interface
 
     /* -------------------- */
     /* 7. CUSTOM ERRORS     */
     /* -------------------- */
 
+    /// @notice Thrown when attempting to add zero address as owner
     error ZeroAddressOwner();
+    /// @notice Thrown when attempting to add duplicate owner
     error DuplicateOwner(address owner);
+    /// @notice Thrown when attempting to interact with executed transaction
     error TransactionAlreadyExecuted();
+    /// @notice Thrown when non-owner attempts owner-only operation
     error NotAnOwner();
+    /// @notice Thrown when owner attempts to vote twice
     error AlreadyVoted();
+    /// @notice Thrown when threshold is invalid (0 or > owners.length)
     error InvalidNumberOfConfirmationsRequired();
+    /// @notice Thrown when accessing non-existent transaction
     error TransactionDoesNotExist();
+    /// @notice Thrown when executing transaction with insufficient votes
     error NotEnoughVotes();
+    /// @notice Thrown when transaction execution fails
     error TransactionFailed();
+    /// @notice Thrown when adding an address that is already an owner
     error OwnerAlreadyExists();
+    /// @notice Thrown when removing owner would make threshold impossible
     error CannotRemoveOwner();
+    /// @notice Thrown when removing non-existent owner
     error OwnerDoesNotExist();
 
     /* -------------------- */
     /* 8. MODIFIERS         */
     /* -------------------- */
-    // create a modifier to check if the sender is the multisig contract
+    
+    /// @notice Restricts function to calls through executeTransaction
+    /// @dev Used for admin functions that require multisig approval
     modifier onlyMultisig() {
         require(msg.sender == address(this), "Only the multisig contract can call this function");
         _;
@@ -79,8 +93,10 @@ contract Multisig is IMultisig {
     /* 9. CONSTRUCTOR       */
     /* -------------------- */
 
-    /// @param _owners Lorem Ip
-    /// @param _threshold Number of required confirmations
+    /// @notice Deploys the multisig contract
+    /// @param _owners Initial list of owner addresses
+    /// @param _threshold Number of required votes to execute transactions
+    /// @dev Validates owner list and threshold
     constructor(address[] memory _owners, uint8 _threshold) {
         if (_threshold == 0) {
             revert InvalidNumberOfConfirmationsRequired();
@@ -114,19 +130,24 @@ contract Multisig is IMultisig {
     /* TX Lifecycle         */
     /* -------------------- */
 
+    /// @notice Creates a new transaction proposal
+    /// @param to Address that will receive the transaction
+    /// @param data The calldata to be executed
+    /// @dev Anyone can propose a transaction
     function proposeTransaction(address to, bytes calldata data) public {
         Transaction memory transaction = Transaction({to: to, data: data, isExecuted: false, voters: new address[](0)});
         transactions.push(transaction);
         emit TransactionProposed(transactions.length - 1, msg.sender, to, data);
     }
 
+    /// @notice Records a vote for a transaction
+    /// @param transactionIndex Index of the transaction in the transactions array
+    /// @dev Only owners can vote, each only once, and not on executed transactions
     function voteForTransaction(uint256 transactionIndex) public {
-        // check if the transaction is not already executed
         if (transactions[transactionIndex].isExecuted) {
             revert TransactionAlreadyExecuted();
         }
 
-        // check if the sender is an owner
         bool isOwner = false;
         for (uint256 i = 0; i < owners.length; i++) {
             if (owners[i] == msg.sender) {
@@ -139,7 +160,6 @@ contract Multisig is IMultisig {
             revert NotAnOwner();
         }
 
-        // check if the voter has already voted, revert
         for (uint256 i = 0; i < transactions[transactionIndex].voters.length; i++) {
             if (transactions[transactionIndex].voters[i] == msg.sender) {
                 revert AlreadyVoted();
@@ -147,22 +167,21 @@ contract Multisig is IMultisig {
         }
 
         transactions[transactionIndex].voters.push(msg.sender);
-        // emit an event
         emit TransactionVoted(transactionIndex, msg.sender);
     }
 
+    /// @notice Executes a transaction that has met the threshold
+    /// @param transactionIndex Index of the transaction to execute
+    /// @dev Anyone can execute once threshold is met
     function executeTransaction(uint256 transactionIndex) public {
-        // check if the transaction is not already executed
         if (transactions[transactionIndex].isExecuted) {
             revert TransactionAlreadyExecuted();
         }
 
-        // check if the threshold is reached
         if (transactions[transactionIndex].voters.length < threshold) {
             revert NotEnoughVotes();
         }
 
-        // execute the transaction
         (bool success,) = transactions[transactionIndex].to.call(transactions[transactionIndex].data);
         if (!success) {
             revert TransactionFailed();
@@ -176,6 +195,9 @@ contract Multisig is IMultisig {
     /* Admin Functions      */
     /* -------------------- */
 
+    /// @notice Changes the number of required votes
+    /// @param newThreshold New threshold value
+    /// @dev Must be called through multisig, cannot exceed owners length
     function setThreshold(uint8 newThreshold) public onlyMultisig {
         if (newThreshold == 0) {
             revert InvalidNumberOfConfirmationsRequired();
@@ -186,6 +208,9 @@ contract Multisig is IMultisig {
         threshold = newThreshold;
     }
 
+    /// @notice Adds a new owner
+    /// @param newOwner Address to add as owner
+    /// @dev Must be called through multisig, cannot be zero or existing owner
     function addOwner(address newOwner) public onlyMultisig {
         if (newOwner == address(0)) {
             revert ZeroAddressOwner();
@@ -200,6 +225,9 @@ contract Multisig is IMultisig {
         owners.push(newOwner);
     }
 
+    /// @notice Removes an existing owner
+    /// @param ownerToRemove Address to remove from owners
+    /// @dev Must be called through multisig, cannot make threshold impossible
     function removeOwner(address ownerToRemove) public onlyMultisig {
         if (owners.length <= threshold) {
             revert CannotRemoveOwner();
@@ -220,9 +248,7 @@ contract Multisig is IMultisig {
             revert OwnerDoesNotExist();
         }
 
-        // Move the last element to the position we want to remove
         owners[indexToRemove] = owners[owners.length - 1];
-        // Remove the last element
         owners.pop();
     }
 
@@ -230,9 +256,10 @@ contract Multisig is IMultisig {
     /* 11. VIEW FUNCTIONS   */
     /* -------------------- */
 
-    /// @notice Get a transaction by its index
+    /// @notice Retrieves a transaction's details
     /// @param index The index of the transaction
-    /// @return The transaction at the given index
+    /// @return The complete transaction struct
+    /// @dev Returns all transaction fields including votes and execution status
     function transactionByIndex(uint256 index) public view returns (Transaction memory) {
         return transactions[index];
     }
