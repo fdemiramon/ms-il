@@ -151,7 +151,7 @@ contract Multisig is IMultisig {
         emit TransactionVoted(transactionIndex, msg.sender);
     }
 
-    function executeTransaction(uint256 transactionIndex) public onlyMultisig {
+    function executeTransaction(uint256 transactionIndex) public {
         // check if the transaction is not already executed
         if (transactions[transactionIndex].isExecuted) {
             revert TransactionAlreadyExecuted();
